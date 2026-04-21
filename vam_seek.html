@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VAM Seek - 2D Video Seek Marker</title>
+    <style>
+        :root {
+            --bg-primary: #1e1e1e;
+            --bg-secondary: #252526;
+            --bg-tertiary: #2d2d30;
+            --border-color: #3c3c3c;
+            --accent: #8b5cf6;
+            --text: #cccccc;
+            --text-dim: #808080;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .app-container {
+            display: flex;
+            height: calc(100vh - 32px);
+        }
+
+        /* Main Area */
+        .main-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        .player-area {
+            flex: 1;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #videoPlayer {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            display: none;
+        }
+
+        #videoPlayer.visible {
+            display: block;
+        }
+
+        /* File Prompt Overlay */
+        #filePrompt {
+            position: absolute;
+            inset: 0;
+            background: var(--bg-primary);
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 200;
+            gap: 20px;
+        }
+
+        #filePrompt.visible {
+            display: flex;
+        }
+
+        .upload-btn {
+            background: var(--accent);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: opacity 0.2s;
+        }
+
+        .upload-btn:hover {
+            opacity: 0.9;
+        }
+
+        /* Right Panel */
+        .grid-panel {
+            width: 420px;
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .grid-header {
+            padding: 8px 12px;
+            background: var(--bg-tertiary);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 12px;
+        }
+
+        .grid-settings {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .grid-select {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            color: var(--text);
+            padding: 4px;
+            font-size: 12px;
+            border-radius: 3px;
+        }
+
+        .grid-container {
+            flex: 1;
+            overflow-y: auto;
+            position: relative;
+            background: var(--bg-primary);
+        }
+
+        .thumbnail-grid {
+            display: grid;
+            gap: 2px;
+            background: var(--border-color);
+        }
+
+        .grid-cell {
+            aspect-ratio: 16/9;
+            background: var(--bg-tertiary);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .grid-cell img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .grid-cell img.loaded {
+            opacity: 1;
+        }
+
+        .cell-time {
+            position: absolute;
+            bottom: 2px;
+            right: 4px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 2px 5px;
+            font-size: 10px;
+            border-radius: 3px;
+        }
+
+        /* Marker */
+        .svg-marker {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            z-index: 50;
+            display: none;
+            width: 30px;
+            height: 30px;
+        }
+
+        /* Loading */
+        .loading-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            z-index: 100;
+        }
+
+        .loading-overlay.visible {
+            display: flex;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #333;
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 10px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .status-bar {
+            height: 32px;
+            background: var(--accent);
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            font-size: 12px;
+            gap: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="app-container">
+        <div class="main-area">
+            <div id="filePrompt">
+                <h2>No Video Loaded</h2>
+                <label class="upload-btn">
+                    Select MP4 File
+                    <input type="file" id="fileInput" accept="video/mp4" style="display:none">
+                </label>
+            </div>
+
+            <div class="player-area">
+                <video id="videoPlayer" controls playsinline></video>
+            </div>
+        </div>
+
+        <div class="grid-panel">
+            <div class="grid-header">
+                <span>GRID SEEK</span>
+                <div class="grid-settings">
+                    <select class="grid-select" id="columnsSelect">
+                        <option value="3" selected>3 Cols</option>
+                        <option value="4">4 Cols</option>
+                    </select>
+                    <select class="grid-select" id="intervalSelect">
+                        <option value="5">5s</option>
+                        <option value="10" selected>10s</option>
+                        <option value="30">30s</option>
+                    </select>
+                </div>
+            </div>
+            <div class="grid-container" id="gridContainer">
+                <div id="thumbnailGrid" class="thumbnail-grid"></div>
+                <div id="svgMarker" class="svg-marker">
+                    <svg viewBox="0 0 100 100">
+                        <circle cx="50" cy="50" r="40" fill="#e94560" stroke="#fff" stroke-width="8" />
+                    </svg>
+                </div>
+                <div class="loading-overlay" id="loadingOverlay">
+                    <div class="spinner"></div>
+                    <div id="loadingText">Extracting...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="status-bar">
+        <div><b>Space:</b> Play/Pause</div>
+        <div><b>Arrows:</b> Jump Cells</div>
+        <div><b>Click Grid:</b> Seek</div>
+    </div>
+
+    <script>
+        // Set to a string path to auto-load, or null to prompt user
+        let VIDEO_URL = null;
+
+        const CONFIG = { columns: 3, secondsPerCell: 10, thumbWidth: 160, thumbHeight: 90, videoDuration: 0 };
+        const STATE = { gridWidth: 0, gridHeight: 0, cellWidth: 0, cellHeight: 0, markerX: 0, markerY: 0, isDragging: false, extractionTaskId: 0 };
+
+        const $ = id => document.getElementById(id);
+        const elements = {
+            videoPlayer: $('videoPlayer'),
+            fileInput: $('fileInput'),
+            filePrompt: $('filePrompt'),
+            thumbnailGrid: $('thumbnailGrid'),
+            svgMarker: $('svgMarker'),
+            gridContainer: $('gridContainer'),
+            loadingOverlay: $('loadingOverlay')
+        };
+
+        // --- Init Logic ---
+        function init() {
+            if (VIDEO_URL) {
+                loadVideo(VIDEO_URL);
+            } else {
+                elements.filePrompt.classList.add('visible');
+            }
+        }
+
+        elements.fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const url = URL.createObjectURL(file); // Create the safe Blob URL
+                loadVideo(url);
+            }
+        });
+
+        function loadVideo(url) {
+            elements.filePrompt.classList.remove('visible');
+            elements.videoPlayer.src = url;
+            elements.videoPlayer.classList.add('visible');
+            elements.videoPlayer.load();
+
+            elements.videoPlayer.onloadedmetadata = () => {
+                CONFIG.videoDuration = elements.videoPlayer.duration;
+                refreshGrid();
+            };
+        }
+
+        // --- Grid & Thumbnail Logic ---
+        async function refreshGrid() {
+            STATE.extractionTaskId++;
+            CONFIG.columns = parseInt($('columnsSelect').value);
+            CONFIG.secondsPerCell = parseInt($('intervalSelect').value);
+
+            const totalCells = Math.ceil(CONFIG.videoDuration / CONFIG.secondsPerCell);
+            elements.thumbnailGrid.innerHTML = '';
+            elements.thumbnailGrid.style.gridTemplateColumns = `repeat(${CONFIG.columns}, 1fr)`;
+
+            for (let i = 0; i < totalCells; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'grid-cell';
+                cell.innerHTML = `<span class="cell-time">${Math.floor(i * CONFIG.secondsPerCell)}s</span>`;
+                elements.thumbnailGrid.appendChild(cell);
+            }
+
+            elements.loadingOverlay.classList.add('visible');
+
+            // Wait for DOM reflow to measure
+            requestAnimationFrame(async () => {
+                updateDimensions();
+                elements.svgMarker.style.display = 'block';
+                await extractFrames(totalCells);
+                elements.loadingOverlay.classList.remove('visible');
+            });
+        }
+
+        async function extractFrames(total) {
+            const currentTask = STATE.extractionTaskId;
+            const extractor = document.createElement('video');
+            extractor.src = elements.videoPlayer.src;
+            extractor.muted = true;
+            await new Promise(r => extractor.onloadeddata = r);
+
+            const canvas = document.createElement('canvas');
+            canvas.width = CONFIG.thumbWidth;
+            canvas.height = CONFIG.thumbHeight;
+            const ctx = canvas.getContext('2d');
+
+            for (let i = 0; i < total; i++) {
+                if (currentTask !== STATE.extractionTaskId) return;
+
+                extractor.currentTime = i * CONFIG.secondsPerCell;
+                await new Promise(r => extractor.onseeked = r);
+
+                ctx.drawImage(extractor, 0, 0, canvas.width, canvas.height);
+                const img = new Image();
+                img.src = canvas.toDataURL('image/jpeg', 0.7);
+                img.onload = () => img.classList.add('loaded');
+
+                const cell = elements.thumbnailGrid.children[i];
+                if (cell) cell.prepend(img);
+            }
+        }
+
+        // --- Interaction ---
+        function updateDimensions() {
+            const rect = elements.thumbnailGrid.getBoundingClientRect();
+            STATE.gridWidth = rect.width;
+            const firstCell = elements.thumbnailGrid.children[0]?.getBoundingClientRect();
+            if (firstCell) {
+                STATE.cellWidth = firstCell.width;
+                STATE.cellHeight = firstCell.height;
+            }
+        }
+
+        function handleInput(e) {
+            const rect = elements.thumbnailGrid.getBoundingClientRect();
+            const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+            const y = Math.max(0, Math.min(e.clientY - rect.top, rect.height));
+
+            // Update Marker
+            elements.svgMarker.style.transform = `translate(${x - 15}px, ${y - 15}px)`;
+
+            // Calc Time
+            const col = Math.floor(x / (STATE.cellWidth + 2));
+            const row = Math.floor(y / (STATE.cellHeight + 2));
+            const progressInCell = (x % (STATE.cellWidth + 2)) / STATE.cellWidth;
+
+            const time = ((row * CONFIG.columns) + col + progressInCell) * CONFIG.secondsPerCell;
+            if (!isNaN(time)) elements.videoPlayer.currentTime = time;
+        }
+
+        elements.thumbnailGrid.onmousedown = (e) => { STATE.isDragging = true; handleInput(e); };
+        window.onmousemove = (e) => { if (STATE.isDragging) handleInput(e); };
+        window.onmouseup = () => { STATE.isDragging = false; };
+
+        // Play/Pause
+        window.onkeydown = (e) => { if (e.code === 'Space') elements.videoPlayer.paused ? elements.videoPlayer.play() : elements.videoPlayer.pause(); };
+
+        init();
+    </script>
+</body>
+
+</html>
