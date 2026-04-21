@@ -101,14 +101,18 @@
                 player.ready(function () {
                     const v = player.tech().el();
 
-                    // Logic from userscript: VR Auto-Detection (180° if aspect ratio is 2:1)
+                    // VR Auto-Detection (180° if aspect ratio is 2:1)
                     v.onloadedmetadata = function () {
                         if (v.videoWidth / v.videoHeight === 2) {
-                            player.vr({ projection: '180' });
+                            player.vr().setProjection('180')
+                            // reload video to apply projection
+                            player.reset();
+                            player.src({
+                                src: fileURL,
+                                type: file.type
+                            });
                         }
                     };
-
-                    player.play();
                 });
             }
         });
